@@ -1,0 +1,52 @@
+# OS Challenge test rig.
+#
+#   docker compose up -d server          # build + start OUR server   (4 CPUs, 512 MB, like the grading VM)
+#   docker compose up -d reference       # start DTU's reference server (same limits) for a baseline
+#   docker compose run --rm single       # 1 request, difficulty 1, answer is always 1 (spec 2.4.4)
+#   docker compose run --rm smoke        # 20 easy requests   -> expect "Results: 100.00 <score>"
+#   docker compose run --rm milestone    # the graded milestone config (100 req, difficulty 30M)
+#   docker compose down                  # stop everything
+#
+# Clients target our server by default. To hit the reference server instead:
+#   PowerShell:  $env:TARGET="reference"; docker compose run --rm milestone
+#   bash:        TARGET=reference docker compose run --rm milestone
+#
+# COMMON_DIR is where os-challenge-common lives, relative to this file (default: parent dir).
+
+x-client: &client
+  image: ubuntu:24.04
+  volumes:
+    - ${COMMON_DIR:-..}/x86_64/bin/linux/client:/client:ro
+  cpus: 2
+  mem_limit: 512m
+
+services:
+  server:
+    build: .
+    cpus: 4
+    mem_limit: 512m
+    tty: true          # so printf output shows in `logs` while the server runs
+    command: ["./server", "5003"]
+
+  reference:
+    image: ubuntu:24.04
+    volumes:
+      - ${COMMON_DIR:-..}/x86_64/bin/linux/server:/reference-server:ro
+    cpus: 4
+    mem_limit: 512m
+    command: ["/reference-server", "5003"]
+
+  # spec 2.4.4 debug config:  seed total start difficulty rep% delay_us lambda
+  single:
+    <<: *client
+    command: ["/client", "${TARGET:-server}", "5003", "1", "1", "1", "1", "0", "100000", "0"]
+
+  # run-client.sh: seed total start difficulty rep% delay_us lambda
+  smoke:
+    <<: *client
+    command: ["/client", "${TARGET:-server}", "5003", "1234", "20", "1", "10", "0", "100000", "0"]
+
+  # run-client-milestone.sh: seed total start difficulty rep% delay_us lambda
+  milestone:
+    <<: *client
+    command: ["/client", "${TARGET:-server}", "5003", "3435245", "100", "0", "30000000", "20", "600000", "1.5"]
