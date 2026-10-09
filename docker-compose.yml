@@ -6,6 +6,9 @@
 #   docker compose run --rm smoke        # 20 easy requests   -> expect "Results: 100.00 <score>"
 #   docker compose run --rm milestone    # the graded milestone config (100 req, difficulty 30M)
 #   docker compose down                  # stop everything
+#   docker compose kill                  # stop everything immediately
+#   docker compose logs server           # watch our server's output
+#   docker compose up -d --build server  # rebuild our server and restart it
 #
 # Clients target our server by default. To hit the reference server instead:
 #   PowerShell:  $env:TARGET="reference"; docker compose run --rm milestone
