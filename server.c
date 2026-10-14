@@ -1,3 +1,4 @@
+// Implementation with multiple subprocesses and queue based of FIFO. So no priority. Queue usese a circular buffer design.
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
@@ -42,54 +43,79 @@ typedef struct {
     task_t *data;
     int capacity;
     int count;
-    int head;
-    int tail;
-} task_queue;
+} task_queue_t;
 
-task_queue init_queue(int capacity) {
-    task_queue q;
+task_queue_t init_queue(int capacity) {
+    task_queue_t q;
     q.data = malloc(sizeof(task_t) * capacity);
     q.capacity = capacity;
     q.count = 0;
-    q.head = 0;
-    q.tail = 0;
     return q;
 }
 
 //adding to the queue
-void enqueue(task_queue *q, int socket, struct packet p) {
+void enqueue(task_queue_t *q, int socket, struct packet p) {
     if (q->count == q->capacity) { // check if queue is full
+        // Worst case scenario, not enough allocated memory
         int new_capacity = q->capacity * 2;
         task_t *new_data = malloc(sizeof(task_t ) * new_capacity);
         for (int i =  0; i < q->count; i++) {
-            new_data[i] = q->data[(q->head + i) % q->capacity];
+            new_data[i] = q->data[i];
         }
 
         free(q->data);
         q->data = new_data;
         q->capacity = new_capacity;
-        q->head = 0;
-        q->tail = q->count;
     }
-
-    q->data[q->tail].client_socket = socket;
-    q->data[q->tail].packet = p;
-
-    q->tail = (q->tail + 1) % q->capacity;
+    int index = q->count;
+    q->data[index].client_socket = socket;
+    q->data[index].packet = p;
     q->count++;
 
+    // Bubble up
+    while (index > 0) {
+        int parent = (index - 1) / 2;
+        if (q->data[index].packet.p > q->data[parent].packet.p) {
+            task_t temp = q->data[index];
+            q->data[index] = q->data[parent];
+            q->data[parent] = temp;
+            index = parent;
+        } else {
+            break;
+        }
+    }
 }
 
 // Extracting from the queue
-task_t dequeue(task_queue *q) {
+task_t dequeue(task_queue_t *q) {
     if (q->count == 0) {
         fprintf(stderr, "Queue is empty\n");
         exit(EXIT_FAILURE);
     }
-    task_t t = q->data[q->head];
-    q->head = (q->head + 1) % q->capacity;
+    task_t result = q->data[0]; // Get the first task in the queue
     q->count--;
-    return t;
+    q->data[0] = q->data[q->count]; // bubble down the last task to the root
+    task_t t; 
+    if (q->count > 0) {
+        int i = 0;
+        while (2 * i + 1 < q->count) { // check if child one is out of bounds
+            int left = 2 * i + 1; // default assumption
+            int right = 2 * i + 2;
+            int highPrio = left;
+            if (right < q->count && !(q->data[left].packet.p > q->data[right].packet.p)) { // Check if assumption is not correct
+                highPrio = right;
+            } 
+            if(q->data[highPrio].packet.p > q->data[i].packet.p) {
+                t = q->data[highPrio];
+                q->data[highPrio] = q->data[i];
+                q->data[i] = t;
+                i = highPrio;
+            } else {
+                return result;
+            }
+        }
+    }
+    return result;
 }
 
 int main(int argc, char *argv[]) {
@@ -181,7 +207,7 @@ int main(int argc, char *argv[]) {
         fds[i + 1].fd = sol[i][0]; // Monitor the read end of the solution pipe
         fds[i + 1].events = POLLIN;
     }
-    task_queue queue = init_queue(100);
+    task_queue_t queue = init_queue(100);
     socklen_t cli_len = sizeof(cli_addr);
 
     // Accept phase:
